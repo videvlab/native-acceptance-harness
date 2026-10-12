@@ -1,0 +1,54 @@
+name: Protected native acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protected-native:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.sha == vars.EXPECTED_MAIN_SHA && github.workflow_sha == vars.EXPECTED_MAIN_SHA
+    environment: protected-native-${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win32-x64
+            runner: windows-2025
+          - platform: darwin-arm64
+            runner: macos-15
+          - platform: darwin-x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ vars.EXPECTED_MAIN_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22.22.2'
+      - name: Execute pinned protected verification
+        id: acceptance
+        env:
+          EXPECTED_MAIN_SHA: ${{ vars.EXPECTED_MAIN_SHA }}
+          BUNDLE_SHA: ${{ vars.BUNDLE_SHA }}
+          SOURCE_SHA: ${{ vars.SOURCE_SHA }}
+          INSTALL_KEY_SHA: ${{ vars.INSTALL_KEY_SHA }}
+          ENGINE_DIGEST: ${{ vars.ENGINE_DIGEST }}
+          RECIPIENT_SHA: ${{ vars.RECIPIENT_SHA }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+          SOURCE_PLAN: ${{ secrets.SOURCE_PLAN }}
+        run: node scripts/lib/protected-native-ci.mjs
+      - name: Preserve neutral status and encrypted results
+        if: always() && steps.acceptance.outputs.upload_ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: protected-native-${{ matrix.platform }}
+          path: |
+            .protected-public/status.json
+            .protected-public/result.enc.json
+          if-no-files-found: ignore
+          retention-days: 7
